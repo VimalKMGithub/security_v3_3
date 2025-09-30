@@ -1,7 +1,6 @@
 package org.vimal.security.v3.enums;
 
 public enum AccessTokenClaims {
-    ACCESS_TOKEN_ID,
     USER_ID,
     USERNAME,
     EMAIL,

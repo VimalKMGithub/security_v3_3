@@ -49,7 +49,7 @@ public class AccessTokenUtility {
             AlgorithmConstraints.ConstraintType.PERMIT,
             ContentEncryptionAlgorithmIdentifiers.AES_256_CBC_HMAC_SHA_512
     );
-    private static final String ACCESS_TOKEN_ID_PREFIX = "SECURITY_V3_ACCESS_TOKEN_ID:";
+    private static final String ACCESS_TOKEN_PREFIX = "SECURITY_V3_ACCESS_TOKEN:";
     private static final String REFRESH_TOKEN_PREFIX = "SECURITY_V3_REFRESH_TOKEN:";
     private static final String REFRESH_TOKEN_MAPPING_PREFIX = "SECURITY_V3_REFRESH_TOKEN_MAPPING:";
     private final SecretKey signingKey;
@@ -77,19 +77,8 @@ public class AccessTokenUtility {
         this.genericAesStaticEncryptorDecryptor = genericAesStaticEncryptorDecryptor;
     }
 
-    private String generateAccessTokenId(UserModel user) throws Exception {
-        String accessTokenId = UUID.randomUUID().toString();
-        redisService.save(
-                genericAesStaticEncryptorDecryptor.encrypt(ACCESS_TOKEN_ID_PREFIX + user.getId().toString()),
-                genericAesRandomEncryptorDecryptor.encrypt(accessTokenId),
-                ACCESS_TOKEN_EXPIRES_IN_DURATION
-        );
-        return accessTokenId;
-    }
-
     private Map<String, Object> buildTokenClaims(UserModel user) throws Exception {
         Map<String, Object> claims = new HashMap<>();
-        claims.put(ACCESS_TOKEN_ID.name(), generateAccessTokenId(user));
         claims.put(USER_ID.name(), user.getId().toString());
         claims.put(USERNAME.name(), user.getUsername());
         claims.put(EMAIL.name(), user.getEmail());
@@ -174,11 +163,37 @@ public class AccessTokenUtility {
     }
 
     private Map<String, Object> generateAccessToken(UserModel user) throws Exception {
+        String encryptedAccessTokenKey = getEncryptedAccessTokenKey(user);
+        String existingEncryptedAccessToken = redisService.get(encryptedAccessTokenKey);
         Map<String, Object> accessToken = new HashMap<>();
-        accessToken.put("access_token", encryptToken(signToken(buildTokenClaims(user))));
+        if (existingEncryptedAccessToken != null) {
+            accessToken.put("access_token", genericAesRandomEncryptorDecryptor.decrypt(existingEncryptedAccessToken));
+            accessToken.put("expires_in_seconds", redisService.getTtl(encryptedAccessTokenKey));
+            accessToken.put("token_type", "Bearer");
+            return accessToken;
+        }
+        String encryptedAccessToken = encryptToken(signToken(buildTokenClaims(user)));
+        redisService.save(
+                encryptedAccessTokenKey,
+                genericAesRandomEncryptorDecryptor.encrypt(encryptedAccessToken),
+                ACCESS_TOKEN_EXPIRES_IN_DURATION
+        );
+        accessToken.put("access_token", encryptedAccessToken);
         accessToken.put("expires_in_seconds", ACCESS_TOKEN_EXPIRES_IN_SECONDS);
         accessToken.put("token_type", "Bearer");
         return accessToken;
+    }
+
+    private String getEncryptedAccessTokenKey(UserModel user) throws Exception {
+        return getEncryptedAccessTokenKey(user.getId());
+    }
+
+    private String getEncryptedAccessTokenKey(UUID userId) throws Exception {
+        return getEncryptedAccessTokenKey(userId.toString());
+    }
+
+    private String getEncryptedAccessTokenKey(String userId) throws Exception {
+        return genericAesStaticEncryptorDecryptor.encrypt(ACCESS_TOKEN_PREFIX + userId);
     }
 
     public Map<String, Object> generateTokens(UserModel user) throws Exception {
@@ -227,17 +242,13 @@ public class AccessTokenUtility {
                 USER_ID.name(),
                 String.class
         );
-        String encryptedAccessTokenId = redisService.get(genericAesStaticEncryptorDecryptor.encrypt(ACCESS_TOKEN_ID_PREFIX + userId));
-        if (encryptedAccessTokenId == null) {
+        String encryptedAccessTokenKey = getEncryptedAccessTokenKey(userId);
+        String encryptedAccessToken = redisService.get(encryptedAccessTokenKey);
+        if (encryptedAccessToken == null) {
             throw new UnauthorizedException("Invalid token");
         }
-        if (!genericAesRandomEncryptorDecryptor.decrypt(encryptedAccessTokenId)
-                .equals(claims.get(
-                                ACCESS_TOKEN_ID.name(),
-                                String.class
-                        )
-                )
-        ) {
+        if (!genericAesRandomEncryptorDecryptor.decrypt(encryptedAccessToken)
+                .equals(accessToken)) {
             throw new UnauthorizedException("Invalid token");
         }
         UserModel user = new UserModel();
@@ -276,20 +287,8 @@ public class AccessTokenUtility {
         return new UserDetailsImpl(user, authorities);
     }
 
-    private String getEncryptedAccessTokenIdKey(UserModel user) throws Exception {
-        return getEncryptedAccessTokenIdKey(user.getId());
-    }
-
-    private String getEncryptedAccessTokenIdKey(UUID userId) throws Exception {
-        return getEncryptedAccessTokenIdKey(userId.toString());
-    }
-
-    private String getEncryptedAccessTokenIdKey(String userId) throws Exception {
-        return genericAesStaticEncryptorDecryptor.encrypt(ACCESS_TOKEN_ID_PREFIX + userId);
-    }
-
     public void revokeAccessToken(UserModel user) throws Exception {
-        redisService.delete(getEncryptedAccessTokenIdKey(user));
+        redisService.delete(getEncryptedAccessTokenKey(user));
     }
 
     private String getEncryptedRefreshTokenMappingKey(String encryptedRefreshToken) throws Exception {
@@ -301,7 +300,7 @@ public class AccessTokenUtility {
         Set<String> encryptedRefreshTokenKeys = new HashSet<>();
         String tempStr;
         for (UserModel user : users) {
-            encryptedKeys.add(getEncryptedAccessTokenIdKey(user));
+            encryptedKeys.add(getEncryptedAccessTokenKey(user));
             tempStr = getEncryptedRefreshTokenKey(user);
             encryptedKeys.add(tempStr);
             encryptedRefreshTokenKeys.add(tempStr);
@@ -329,7 +328,7 @@ public class AccessTokenUtility {
         Set<String> encryptedRefreshTokenKeys = new HashSet<>();
         String tempStr;
         for (UUID userId : userIds) {
-            encryptedKeys.add(getEncryptedAccessTokenIdKey(userId));
+            encryptedKeys.add(getEncryptedAccessTokenKey(userId));
             tempStr = getEncryptedRefreshTokenKey(userId);
             encryptedKeys.add(tempStr);
             encryptedRefreshTokenKeys.add(tempStr);

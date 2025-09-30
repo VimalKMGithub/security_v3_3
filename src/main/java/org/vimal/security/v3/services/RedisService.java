@@ -40,6 +40,10 @@ public class RedisService {
                 .get(key);
     }
 
+    public Long getTtl(String key) {
+        return redisTemplate.getExpire(key);
+    }
+
     public List<String> getAll(Set<String> keys) {
         return redisTemplate.opsForValue()
                 .multiGet(keys);
