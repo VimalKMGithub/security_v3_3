@@ -242,13 +242,7 @@ public class AccessTokenUtility {
                 USER_ID.name(),
                 String.class
         );
-        String encryptedAccessTokenKey = getEncryptedAccessTokenKey(userId);
-        String encryptedAccessToken = redisService.get(encryptedAccessTokenKey);
-        if (encryptedAccessToken == null) {
-            throw new UnauthorizedException("Invalid token");
-        }
-        if (!genericAesRandomEncryptorDecryptor.decrypt(encryptedAccessToken)
-                .equals(accessToken)) {
+        if (redisService.get(getEncryptedAccessTokenKey(userId)) == null) {
             throw new UnauthorizedException("Invalid token");
         }
         UserModel user = new UserModel();
