@@ -77,7 +77,7 @@ public class AccessTokenUtility {
         this.genericAesStaticEncryptorDecryptor = genericAesStaticEncryptorDecryptor;
     }
 
-    private Map<String, Object> buildTokenClaims(UserModel user) throws Exception {
+    private Map<String, Object> buildTokenClaims(UserModel user) {
         Map<String, Object> claims = new HashMap<>();
         claims.put(USER_ID.name(), user.getId().toString());
         claims.put(USERNAME.name(), user.getUsername());
