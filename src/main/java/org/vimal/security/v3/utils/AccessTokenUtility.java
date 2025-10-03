@@ -166,9 +166,10 @@ public class AccessTokenUtility {
         String encryptedAccessTokenKey = getEncryptedAccessTokenKey(user);
         String existingEncryptedAccessToken = redisService.get(encryptedAccessTokenKey);
         Map<String, Object> accessToken = new HashMap<>();
-        if (existingEncryptedAccessToken != null) {
+        Long expiresInSeconds = redisService.getTtl(encryptedAccessTokenKey);
+        if (existingEncryptedAccessToken != null && expiresInSeconds != null && expiresInSeconds > 60) {
             accessToken.put("access_token", genericAesRandomEncryptorDecryptor.decrypt(existingEncryptedAccessToken));
-            accessToken.put("expires_in_seconds", redisService.getTtl(encryptedAccessTokenKey));
+            accessToken.put("expires_in_seconds", expiresInSeconds);
             accessToken.put("token_type", "Bearer");
             return accessToken;
         }
